@@ -46,8 +46,122 @@ const icons = {
   guide:     '⊙',
 };
 
+// ─── Login Screen ────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [password, setPassword] = useState('');
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [showPwd, setShowPwd]   = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const res  = await fetch('/api/admin/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ password })
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.setItem('adminToken', data.token);
+        onLogin(data.token);
+      } else {
+        setError('Mot de passe incorrect. Réessayez.');
+      }
+    } catch {
+      setError('Erreur de connexion au serveur.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-overlay">
+      <div className="bg-ambient">
+        <div className="ambient-orb-1"></div>
+        <div className="ambient-orb-2"></div>
+        <div className="ambient-orb-3"></div>
+      </div>
+      <div className="login-card">
+        <div className="login-logo">
+          <div className="logo-icon" style={{ width: '56px', height: '56px', fontSize: '1.4rem' }}>KS</div>
+          <h1 className="login-title">KeyShield</h1>
+          <p className="login-sub">Panneau d'Administration</p>
+        </div>
+        <form onSubmit={handleSubmit} className="login-form">
+          <div className="form-group">
+            <label htmlFor="login-pwd">Mot de passe administrateur</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                id="login-pwd"
+                type={showPwd ? 'text' : 'password'}
+                className="form-control"
+                placeholder="••••••••••••"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                style={{ paddingRight: '3rem' }}
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setShowPwd(v => !v)}
+                style={{
+                  position: 'absolute', right: '0.75rem', top: '50%',
+                  transform: 'translateY(-50%)', background: 'none',
+                  border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
+                  fontSize: '1rem', padding: 0
+                }}
+              >{showPwd ? '🙈' : '👁'}</button>
+            </div>
+          </div>
+          {error && (
+            <div className="login-error">
+              <span>✕</span> {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ width: '100%', padding: '0.85rem', fontSize: '1rem' }}
+            disabled={loading}
+          >
+            {loading ? '⏳ Connexion…' : '🔐 Se Connecter'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ────────────────────────────────────────────────────────────────
 function App() {
+  // ── Auth ───────────────────────────────────────────────────────────────────
+  const [token, setToken] = useState(() => localStorage.getItem('adminToken'));
+
+  const handleLogin  = (t) => setToken(t);
+  const handleLogout = () => {
+    localStorage.removeItem('adminToken');
+    setToken(null);
+  };
+
+  // ── Admin fetch helper (adds Bearer token to every admin request) ───────────
+  const adminFetch = useCallback(async (url, options = {}) => {
+    const headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`
+    };
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+      handleLogout();
+    }
+    return res;
+  }, [token]);
+
+  // Show login screen if not authenticated
+  if (!token) return <LoginScreen onLogin={handleLogin} />;
+
   const [activeTab, setActiveTab]       = useState('dashboard');
   const [apps, setApps]                 = useState([]);
   const [keys, setKeys]                 = useState([]);
@@ -89,7 +203,7 @@ function App() {
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchApps = useCallback(async () => {
     try {
-      const res  = await fetch('/api/admin/apps');
+      const res  = await adminFetch('/api/admin/apps');
       const data = await res.json();
       if (data.success) {
         setApps(data.data);
@@ -99,16 +213,16 @@ function App() {
         }
       }
     } catch { showNotification('Error fetching applications', 'danger'); }
-  }, [selectedAppId]);
+  }, [selectedAppId, adminFetch]);
 
   const fetchKeys      = async () => {
-    try { const r = await fetch('/api/admin/keys');      const d = await r.json(); if (d.success) setKeys(d.data);      } catch { showNotification('Error fetching keys', 'danger'); }
+    try { const r = await adminFetch('/api/admin/keys');      const d = await r.json(); if (d.success) setKeys(d.data);      } catch { showNotification('Error fetching keys', 'danger'); }
   };
   const fetchVariables = async () => {
-    try { const r = await fetch('/api/admin/variables'); const d = await r.json(); if (d.success) setVariables(d.data); } catch { showNotification('Error fetching variables', 'danger'); }
+    try { const r = await adminFetch('/api/admin/variables'); const d = await r.json(); if (d.success) setVariables(d.data); } catch { showNotification('Error fetching variables', 'danger'); }
   };
   const fetchLogs      = async () => {
-    try { const r = await fetch('/api/admin/logs');      const d = await r.json(); if (d.success) setLogs(d.data);      } catch { showNotification('Error fetching logs', 'danger'); }
+    try { const r = await adminFetch('/api/admin/logs');      const d = await r.json(); if (d.success) setLogs(d.data);      } catch { showNotification('Error fetching logs', 'danger'); }
   };
 
   const refreshAll = () => { fetchApps(); fetchKeys(); fetchVariables(); fetchLogs(); };
@@ -120,7 +234,7 @@ function App() {
     e.preventDefault();
     if (!newAppName.trim()) return;
     try {
-      const res  = await fetch('/api/admin/apps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newAppName }) });
+      const res  = await adminFetch('/api/admin/apps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newAppName }) });
       const data = await res.json();
       if (data.success) { showNotification(`Application "${newAppName}" created!`); setNewAppName(''); fetchApps(); }
       else showNotification(data.message, 'danger');
@@ -130,7 +244,7 @@ function App() {
   const handleDeleteApp = async (id) => {
     if (!confirm('Delete this application? All keys and data will be lost.')) return;
     try {
-      const res  = await fetch(`/api/admin/apps/${id}`, { method: 'DELETE' });
+      const res  = await adminFetch(`/api/admin/apps/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) { showNotification('Application deleted'); refreshAll(); }
     } catch { showNotification('Failed to delete application', 'danger'); }
@@ -140,7 +254,7 @@ function App() {
     e.preventDefault();
     if (!selectedAppId) { showNotification('Veuillez sélectionner une application', 'danger'); return; }
     try {
-      const res  = await fetch('/api/admin/keys/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_id: selectedAppId, count: parseInt(keyCount), duration_days: parseInt(keyDuration), duration_unit: keyUnit, note: keyNote, prefix: keyPrefix }) });
+      const res  = await adminFetch('/api/admin/keys/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_id: selectedAppId, count: parseInt(keyCount), duration_days: parseInt(keyDuration), duration_unit: keyUnit, note: keyNote, prefix: keyPrefix }) });
       const data = await res.json();
       if (data.success) {
         showNotification(`${keyCount} clé(s) générée(s) avec succès !`);
@@ -154,7 +268,7 @@ function App() {
 
   const handleResetHWID = async (keyId) => {
     try {
-      const res  = await fetch('/api/admin/keys/reset-hwid', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key_id: keyId }) });
+      const res  = await adminFetch('/api/admin/keys/reset-hwid', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key_id: keyId }) });
       const data = await res.json();
       if (data.success) { showNotification('HWID reset successfully'); fetchKeys(); }
     } catch { showNotification('Failed to reset HWID', 'danger'); }
@@ -163,7 +277,7 @@ function App() {
   const handleToggleBan = async (keyId, currentStatus) => {
     const newStatus = currentStatus === 'banned' ? 'active' : 'banned';
     try {
-      const res  = await fetch('/api/admin/keys/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key_id: keyId, status: newStatus }) });
+      const res  = await adminFetch('/api/admin/keys/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key_id: keyId, status: newStatus }) });
       const data = await res.json();
       if (data.success) { showNotification(`Key ${newStatus === 'banned' ? 'banned' : 'unbanned'}`); fetchKeys(); }
     } catch { showNotification('Failed to update status', 'danger'); }
@@ -172,7 +286,7 @@ function App() {
   const handleDeleteKey = async (keyId) => {
     if (!confirm('Delete this key?')) return;
     try {
-      const res  = await fetch(`/api/admin/keys/${keyId}`, { method: 'DELETE' });
+      const res  = await adminFetch(`/api/admin/keys/${keyId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) { showNotification('Key deleted'); fetchKeys(); }
     } catch { showNotification('Failed to delete key', 'danger'); }
@@ -182,7 +296,7 @@ function App() {
     e.preventDefault();
     if (!varAppId || !varName || !varValue) return;
     try {
-      const res  = await fetch('/api/admin/variables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_id: varAppId, name: varName, value: varValue }) });
+      const res  = await adminFetch('/api/admin/variables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_id: varAppId, name: varName, value: varValue }) });
       const data = await res.json();
       if (data.success) { showNotification('Variable saved'); setVarName(''); setVarValue(''); fetchVariables(); }
     } catch { showNotification('Failed to save variable', 'danger'); }
@@ -191,7 +305,7 @@ function App() {
   const handleDeleteVariable = async (id) => {
     if (!confirm('Delete this variable?')) return;
     try {
-      const res  = await fetch(`/api/admin/variables/${id}`, { method: 'DELETE' });
+      const res  = await adminFetch(`/api/admin/variables/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) { showNotification('Variable deleted'); fetchVariables(); }
     } catch { showNotification('Failed to delete variable', 'danger'); }
@@ -200,7 +314,7 @@ function App() {
   const handleClearLogs = async () => {
     if (!confirm('Clear all action logs?')) return;
     try {
-      const res  = await fetch('/api/admin/logs', { method: 'DELETE' });
+      const res  = await adminFetch('/api/admin/logs', { method: 'DELETE' });
       const data = await res.json();
       if (data.success) { showNotification('Logs cleared'); fetchLogs(); }
     } catch { showNotification('Failed to clear logs', 'danger'); }
@@ -292,6 +406,14 @@ function App() {
           <div className="logo-icon">KS</div>
           <span className="logo-text">KeyShield</span>
         </div>
+        <button
+          className="btn btn-secondary"
+          style={{ margin: '0 1rem', padding: '0.5rem 1rem', fontSize: '0.85rem', color: 'var(--danger)' }}
+          onClick={handleLogout}
+          title="Se déconnecter"
+        >
+          ⎋ Déconnexion
+        </button>
         <ul className="nav-links">
           {Object.entries(tabLabels).map(([key, label]) => (
             <li
