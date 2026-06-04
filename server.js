@@ -363,8 +363,9 @@ app.post('/api/admin/login', (req, res) => {
 
 // Admin Auth Middleware
 app.use('/api/admin', (req, res, next) => {
-  // Allow login route to bypass
-  if (req.path === '/login') return next();
+  // Allow login route to bypass (normalize path check)
+  const isLoginRoute = req.path === '/login' || req.path === '/login/' || req.originalUrl.endsWith('/login') || req.originalUrl.endsWith('/login/');
+  if (isLoginRoute) return next();
   
   const authHeader = req.headers['authorization'];
   const expectedToken = `Bearer ${Buffer.from(ADMIN_PASSWORD).toString('base64')}`;
