@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const path = require('path');
 const db = require('./db');
 
 const app = express();
@@ -57,7 +58,10 @@ function computeExpiry(amount, unit) {
 // ROOT
 // ----------------------------------------------------
 
-app.get('/', (req, res) => {
+// Serve static frontend files
+app.use(express.static(path.join(__dirname, 'frontend/dist')));
+
+app.get('/api', (req, res) => {
   res.json({
     success: true,
     message: 'Key Manager API running'
@@ -597,6 +601,12 @@ app.delete('/api/admin/logs', async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+});
+
+// Fallback for SPA frontend routing (non-API routes)
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
 });
 
 // ----------------------------------------------------
